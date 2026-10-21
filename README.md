@@ -28,6 +28,18 @@ npm install
 npm run dev
 ```
 
+## Tests
+
+```sh
+npm test            # unit/routing tests (vitest)
+npm run test:e2e    # browser tests against the live app (Playwright, uses the installed Chrome)
+```
+
+The signed-out e2e tests need nothing. The signed-in ones (login, refresh, template, import,
+bad file, sign out) run when you pass an existing confirmed user:
+`E2E_EMAIL=you@example.com E2E_PASSWORD=... npm run test:e2e`. They clean up the rows they create.
+Set `E2E_BASE_URL` to test a local build instead of the deployed site.
+
 ## Deploy
 
 ```sh

@@ -40,3 +40,5 @@ dist-ssr
 .firebase/
 supabase/.temp/
 deno.lock
+test-results/
+playwright-report/
