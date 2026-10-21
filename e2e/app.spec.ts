@@ -116,6 +116,9 @@ test.describe("signed in", () => {
 
   test("a file that is not a workbook is rejected with a message", async ({ page }) => {
     await login(page);
+    // The table renders after the buildings query resolves; count rows only once it is there.
+    await expect(page.getByRole("columnheader", { name: "Name" })).toBeVisible();
+    await expect(page.getByText(/\d+ total/)).toBeVisible();
     const before = await page.getByRole("row").count();
     await page.locator('input[type="file"]').setInputFiles({
       name: "notes.png",
