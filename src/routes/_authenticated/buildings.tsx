@@ -4,14 +4,24 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
-import { importBuildings, TEMPLATE_COLUMNS } from "@/lib/buildings.functions";
+import { TEMPLATE_COLUMNS } from "@/lib/buildings";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 const buildingsQuery = queryOptions({
   queryKey: ["buildings"],
   queryFn: async () => {
-    const { data, error } = await supabase.from("buildings").select("*").order("created_at", { ascending: false });
+    const { data, error } = await supabase
+      .from("buildings")
+      .select("*")
+      .order("created_at", { ascending: false });
     if (error) throw error;
     return data;
   },
@@ -40,11 +50,18 @@ function downloadTemplate() {
   XLSX.writeFile(wb, "buildings-template.xlsx");
 }
 
-function toBase64(buf: ArrayBuffer) {
-  const bytes = new Uint8Array(buf);
-  let s = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(s);
+// FunctionsHttpError carries the raw Response; surface the function's own { error } message.
+async function functionErrorMessage(error: Error): Promise<string> {
+  const response = (error as { context?: unknown }).context;
+  if (response instanceof Response) {
+    try {
+      const payload = (await response.json()) as { error?: string };
+      if (payload.error) return payload.error;
+    } catch {
+      /* fall through to the generic message */
+    }
+  }
+  return error.message;
 }
 
 function BuildingsPage() {
@@ -57,8 +74,17 @@ function BuildingsPage() {
   async function onFile(file: File) {
     setBusy(true);
     try {
-      const res = await importBuildings({ data: { fileBase64: toBase64(await file.arrayBuffer()) } });
-      toast.success(`Imported ${res.inserted} buildings${res.skipped ? `, skipped ${res.skipped} without a name` : ""}.`);
+      const body = new FormData();
+      body.append("file", file);
+      const { data: res, error } = await supabase.functions.invoke<{
+        inserted: number;
+        skipped: number;
+      }>("import-buildings", { body });
+      if (error) throw new Error(await functionErrorMessage(error));
+      if (!res) throw new Error("Empty response from the import function.");
+      toast.success(
+        `Imported ${res.inserted} buildings${res.skipped ? `, skipped ${res.skipped} without a name` : ""}.`,
+      );
       await qc.invalidateQueries({ queryKey: ["buildings"] });
     } catch (e) {
       toast.error((e as Error).message);
@@ -83,7 +109,9 @@ function BuildingsPage() {
           <p className="text-sm text-muted-foreground">{buildings.length} total</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={downloadTemplate}>Download Excel template</Button>
+          <Button variant="outline" onClick={downloadTemplate}>
+            Download Excel template
+          </Button>
           <Button disabled={busy} onClick={() => fileRef.current?.click()}>
             {busy ? "Importing…" : "Import Excel"}
           </Button>
@@ -94,7 +122,9 @@ function BuildingsPage() {
             className="hidden"
             onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
           />
-          <Button variant="ghost" onClick={signOut}>Sign out</Button>
+          <Button variant="ghost" onClick={signOut}>
+            Sign out
+          </Button>
         </div>
       </header>
 

@@ -7,9 +7,10 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
+  // Static SPA for Firebase Hosting: no Nitro server bundle, and TanStack Start
+  // prerenders a single client shell (index.html) instead of rendering on the server.
+  nitro: false,
   tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
-    server: { entry: "server" },
+    spa: { enabled: true },
   },
 });

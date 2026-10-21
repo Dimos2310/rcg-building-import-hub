@@ -1,1 +1,4 @@
-project_id = "svfcfhhjvweaexspekwe"
+project_id = "zhsevbaeijsrfqfpcgox"
+
+[functions.import-buildings]
+verify_jwt = true
