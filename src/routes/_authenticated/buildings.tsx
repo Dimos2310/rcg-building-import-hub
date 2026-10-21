@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 import { TEMPLATE_COLUMNS } from "@/lib/buildings";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +40,19 @@ export const Route = createFileRoute("/_authenticated/buildings")({
   loader: ({ context }) => context.queryClient.ensureQueryData(buildingsQuery),
   component: BuildingsPage,
 });
+
+type Building = Database["public"]["Tables"]["buildings"]["Row"];
+
+// Same columns as the template, so an exported file can be edited and imported again.
+function exportBuildings(buildings: Building[]) {
+  const ws = XLSX.utils.aoa_to_sheet([
+    [...TEMPLATE_COLUMNS],
+    ...buildings.map((b) => TEMPLATE_COLUMNS.map((c) => b[c])),
+  ]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Buildings");
+  XLSX.writeFile(wb, "buildings-export.xlsx");
+}
 
 function downloadTemplate() {
   const ws = XLSX.utils.aoa_to_sheet([
@@ -111,6 +125,13 @@ function BuildingsPage() {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={downloadTemplate}>
             Download Excel template
+          </Button>
+          <Button
+            variant="outline"
+            disabled={buildings.length === 0}
+            onClick={() => exportBuildings(buildings)}
+          >
+            Export Excel
           </Button>
           <Button disabled={busy} onClick={() => fileRef.current?.click()}>
             {busy ? "Importing…" : "Import Excel"}

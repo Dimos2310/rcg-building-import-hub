@@ -114,6 +114,35 @@ test.describe("signed in", () => {
     await expect(page.getByRole("cell", { name: "no name here" })).toHaveCount(0);
   });
 
+  test("exporting includes the buildings imported earlier", async ({ page }) => {
+    await login(page);
+    const file = workbook(
+      [
+        ["name", "address", "city", "country", "floors", "year_built"],
+        [`${PREFIX} Export Tower`, "9 Export St", "Athens", "Greece", 7, 2010],
+      ],
+      "export-source.xlsx",
+    );
+    await page.locator('input[type="file"]').setInputFiles(file);
+    await expect(page.getByRole("cell", { name: `${PREFIX} Export Tower` })).toBeVisible();
+
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "Export Excel" }).click(),
+    ]);
+    expect(download.suggestedFilename()).toBe("buildings-export.xlsx");
+    const wb = XLSX.read(readFileSync((await download.path())!));
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]!]!);
+    expect(rows).toContainEqual({
+      name: `${PREFIX} Export Tower`,
+      address: "9 Export St",
+      city: "Athens",
+      country: "Greece",
+      floors: 7,
+      year_built: 2010,
+    });
+  });
+
   test("a file that is not a workbook is rejected with a message", async ({ page }) => {
     await login(page);
     // The table renders after the buildings query resolves; count rows only once it is there.
