@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { expect, test, type Page } from "@playwright/test";
 import * as XLSX from "xlsx";
@@ -89,7 +90,7 @@ test.describe("signed in", () => {
       page.getByRole("button", { name: "Download Excel template" }).click(),
     ]);
     expect(download.suggestedFilename()).toBe("buildings-template.xlsx");
-    const wb = XLSX.readFile((await download.path())!);
+    const wb = XLSX.read(readFileSync((await download.path())!));
     const first = wb.Sheets[wb.SheetNames[0]!]!;
     const header = XLSX.utils.sheet_to_json<string[]>(first, { header: 1 })[0];
     expect(header).toEqual(["name", "address", "city", "country", "floors", "year_built"]);
