@@ -36,12 +36,12 @@ export const importBuildings = createServerFn({ method: "POST" })
         for (const [k, v] of Object.entries(r)) norm[k.trim().toLowerCase().replace(/\s+/g, "_")] = v;
         return {
           user_id: context.userId,
-          name: toText(norm.name),
-          address: toText(norm.address),
-          city: toText(norm.city),
-          country: toText(norm.country),
-          floors: toInt(norm.floors),
-          year_built: toInt(norm.year_built),
+          name: toText(norm["name"]),
+          address: toText(norm["address"]),
+          city: toText(norm["city"]),
+          country: toText(norm["country"]),
+          floors: toInt(norm["floors"]),
+          year_built: toInt(norm["year_built"]),
         };
       })
       .filter((r): r is typeof r & { name: string } => !!r.name);
