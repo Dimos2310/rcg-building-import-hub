@@ -26,7 +26,8 @@ export const importBuildings = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const bytes = Uint8Array.from(atob(data.fileBase64), (c) => c.charCodeAt(0));
     const wb = XLSX.read(bytes, { type: "array" });
-    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const first = wb.SheetNames[0];
+    const sheet = first ? wb.Sheets[first] : undefined;
     if (!sheet) throw new Error("The file has no sheets.");
     const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null });
 
