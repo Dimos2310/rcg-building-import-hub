@@ -8,3 +8,6 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+- SSR is disabled app-wide via `defaultSsr: false` in src/start.ts; the app is client-rendered only.
+- Excel import runs in a server function (src/lib/buildings.functions.ts), not a Supabase Edge Function, because TanStack Start apps keep server logic in createServerFn.
+- SQL migrations are mirrored in supabase/migrations for reference.
