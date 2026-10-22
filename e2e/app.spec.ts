@@ -96,22 +96,85 @@ test.describe("signed in", () => {
     expect(header).toEqual(["name", "address", "city", "country", "floors", "year_built"]);
   });
 
-  test("importing a workbook inserts rows and skips unnamed ones", async ({ page }) => {
+  test("importing validates rows and skips duplicates on a second import", async ({ page }) => {
     await login(page);
-    const file = workbook(
-      [
-        ["Name", "Address", "City", "Country", "Floors", "Year Built"],
-        [`${PREFIX} Tower`, "1 Main St", "Athens", "Greece", 12, 1998],
-        [`${PREFIX} Annex`, "2 Side St", "Patras", "Greece", "n/a", null],
-        ["", "no name here", "Nowhere", "", 3, 2001],
-      ],
-      "import.xlsx",
-    );
-    await page.locator('input[type="file"]').setInputFiles(file);
-    await expect(page.getByText("Imported 2 buildings, skipped 1 without a name.")).toBeVisible();
+    const file = () =>
+      workbook(
+        [
+          ["Name", "Address", "City", "Country", "Floors", "Year Built"],
+          [`${PREFIX} Tower`, "1 Main St", "Athens", "Greece", 12, 1998],
+          [`${PREFIX} Annex`, "2 Side St", "Patras", "Greece", 5, null],
+          ["", "no name here", "Nowhere", "", 3, 2001],
+          [`${PREFIX} Broken`, "3 Bad St", "Athens", "Greece", "n/a", null],
+        ],
+        "import.xlsx",
+      );
+
+    await page.locator('input[type="file"]').setInputFiles(file());
+    await expect(page.getByText("Imported 2 buildings.")).toBeVisible();
+    await expect(page.getByText(/2 rows rejected/)).toBeVisible();
+    await expect(page.getByText(/row 4: name is required/)).toBeVisible();
     await expect(page.getByRole("cell", { name: `${PREFIX} Tower` })).toBeVisible();
     await expect(page.getByRole("cell", { name: `${PREFIX} Annex` })).toBeVisible();
     await expect(page.getByRole("cell", { name: "no name here" })).toHaveCount(0);
+    await expect(page.getByRole("cell", { name: `${PREFIX} Broken` })).toHaveCount(0);
+
+    // Same file again: everything valid is now a duplicate, so nothing new is stored.
+    await page.locator('input[type="file"]').setInputFiles(file());
+    await expect(page.getByText("Nothing was imported.")).toBeVisible();
+    await expect(page.getByText(/2 duplicates skipped/)).toBeVisible();
+    await expect(page.getByRole("cell", { name: `${PREFIX} Tower` })).toHaveCount(1);
+  });
+
+  test("a building can be edited and validation errors are shown", async ({ page }) => {
+    await login(page);
+    const name = `${PREFIX} Edit Me`;
+    await page.locator('input[type="file"]').setInputFiles(
+      workbook(
+        [
+          ["name", "address", "city", "country", "floors", "year_built"],
+          [name, "5 Edit St", "Athens", "Greece", 4, 1990],
+        ],
+        "edit.xlsx",
+      ),
+    );
+    await expect(page.getByRole("cell", { name })).toBeVisible();
+
+    await page.getByRole("button", { name: `Edit ${name}` }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Floors").fill("999");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await expect(dialog.getByRole("alert")).toContainText("floors must be a whole number");
+
+    await dialog.getByLabel("Floors").fill("6");
+    await dialog.getByLabel("City").fill("Thessaloniki");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Building updated.")).toBeVisible();
+    const row = page.getByRole("row").filter({ hasText: name });
+    await expect(row).toContainText("Thessaloniki");
+    await expect(row).toContainText("6");
+  });
+
+  test("a building can be deleted after confirming", async ({ page }) => {
+    await login(page);
+    const name = `${PREFIX} Delete Me`;
+    await page
+      .locator('input[type="file"]')
+      .setInputFiles(workbook([["name"], [name]], "delete.xlsx"));
+    await expect(page.getByRole("cell", { name })).toBeVisible();
+
+    await page.getByRole("button", { name: `Delete ${name}` }).click();
+    const confirm = page.getByRole("alertdialog");
+    await confirm.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("cell", { name })).toBeVisible();
+
+    await page.getByRole("button", { name: `Delete ${name}` }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Delete", exact: true })
+      .click();
+    await expect(page.getByText("Building deleted.")).toBeVisible();
+    await expect(page.getByRole("cell", { name })).toHaveCount(0);
   });
 
   test("exporting includes the buildings imported earlier", async ({ page }) => {

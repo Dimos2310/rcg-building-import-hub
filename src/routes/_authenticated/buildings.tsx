@@ -3,9 +3,11 @@ import { queryOptions, useQueryClient, useSuspenseQuery } from "@tanstack/react-
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import { Pencil, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
-import { TEMPLATE_COLUMNS } from "@/lib/buildings";
+import { TEMPLATE_COLUMNS, describeImport } from "@/lib/buildings";
+import { importBuildingsFile, listBuildings, type Building } from "@/lib/buildings-api";
+import { DeleteBuildingDialog, EditBuildingDialog } from "@/components/buildings/building-dialogs";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -18,14 +20,7 @@ import {
 
 const buildingsQuery = queryOptions({
   queryKey: ["buildings"],
-  queryFn: async () => {
-    const { data, error } = await supabase
-      .from("buildings")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    return data;
-  },
+  queryFn: listBuildings,
 });
 
 export const Route = createFileRoute("/_authenticated/buildings")({
@@ -40,8 +35,6 @@ export const Route = createFileRoute("/_authenticated/buildings")({
   loader: ({ context }) => context.queryClient.ensureQueryData(buildingsQuery),
   component: BuildingsPage,
 });
-
-type Building = Database["public"]["Tables"]["buildings"]["Row"];
 
 // Same columns as the template, so an exported file can be edited and imported again.
 function exportBuildings(buildings: Building[]) {
@@ -64,42 +57,24 @@ function downloadTemplate() {
   XLSX.writeFile(wb, "buildings-template.xlsx");
 }
 
-// FunctionsHttpError carries the raw Response; surface the function's own { error } message.
-async function functionErrorMessage(error: Error): Promise<string> {
-  const response = (error as { context?: unknown }).context;
-  if (response instanceof Response) {
-    try {
-      const payload = (await response.json()) as { error?: string };
-      if (payload.error) return payload.error;
-    } catch {
-      /* fall through to the generic message */
-    }
-  }
-  return error.message;
-}
-
 function BuildingsPage() {
   const { data: buildings } = useSuspenseQuery(buildingsQuery);
   const qc = useQueryClient();
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState<Building | null>(null);
+  const [deleting, setDeleting] = useState<Building | null>(null);
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ["buildings"] });
 
   async function onFile(file: File) {
     setBusy(true);
     try {
-      const body = new FormData();
-      body.append("file", file);
-      const { data: res, error } = await supabase.functions.invoke<{
-        inserted: number;
-        skipped: number;
-      }>("import-buildings", { body });
-      if (error) throw new Error(await functionErrorMessage(error));
-      if (!res) throw new Error("Empty response from the import function.");
-      toast.success(
-        `Imported ${res.inserted} buildings${res.skipped ? `, skipped ${res.skipped} without a name` : ""}.`,
-      );
-      await qc.invalidateQueries({ queryKey: ["buildings"] });
+      const res = await importBuildingsFile(file);
+      const { level, title, description } = describeImport(res);
+      toast[level](title, description ? { description } : undefined);
+      await refresh();
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -159,12 +134,13 @@ function BuildingsPage() {
               <TableHead>Country</TableHead>
               <TableHead className="text-right">Floors</TableHead>
               <TableHead className="text-right">Year built</TableHead>
+              <TableHead className="w-24 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {buildings.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                   No buildings yet. Download the template, fill it in and import it.
                 </TableCell>
               </TableRow>
@@ -177,12 +153,51 @@ function BuildingsPage() {
                   <TableCell>{b.country}</TableCell>
                   <TableCell className="text-right">{b.floors}</TableCell>
                   <TableCell className="text-right">{b.year_built}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Edit ${b.name}`}
+                      onClick={() => setEditing(b)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Delete ${b.name}`}
+                      onClick={() => setDeleting(b)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
       </div>
+
+      {editing && (
+        <EditBuildingDialog
+          building={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void refresh();
+          }}
+        />
+      )}
+      {deleting && (
+        <DeleteBuildingDialog
+          building={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => {
+            setDeleting(null);
+            void refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

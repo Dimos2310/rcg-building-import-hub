@@ -1,12 +1,15 @@
-// Excel uploader: receives a workbook from the signed-in user, parses it and inserts the rows.
+// Excel uploader: receives a workbook from the signed-in user, validates it and inserts the rows.
 // ./xlsx.mjs is the official SheetJS 0.20.3 ESM build (https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs),
 // vendored because the Supabase bundler cannot import from the SheetJS CDN and npm has only 0.18.5 (known CVEs).
 // Runs with the caller's JWT, so the buildings RLS policies decide what may be written.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as XLSX from "./xlsx.mjs";
+import { prepareImport, type ImportResult } from "../_shared/buildings.ts";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_ROWS = 5000;
+const MAX_REPORTED_ISSUES = 20;
+const PAGE_SIZE = 1000;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,18 +22,6 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-}
-
-function toInt(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.trunc(n) : null;
-}
-
-function toText(v: unknown): string | null {
-  if (v === null || v === undefined) return null;
-  const s = String(v).trim();
-  return s === "" ? null : s;
 }
 
 Deno.serve(async (req) => {
@@ -75,27 +66,33 @@ Deno.serve(async (req) => {
   }
   if (raw.length > MAX_ROWS) return json({ error: `Too many rows (max ${MAX_ROWS}).` }, 413);
 
-  const rows = raw
-    .map((r) => {
-      const norm: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(r)) norm[k.trim().toLowerCase().replace(/\s+/g, "_")] = v;
-      return {
-        user_id: userId,
-        name: toText(norm["name"]),
-        address: toText(norm["address"]),
-        city: toText(norm["city"]),
-        country: toText(norm["country"]),
-        floors: toInt(norm["floors"]),
-        year_built: toInt(norm["year_built"]),
-      };
-    })
-    .filter((r) => r.name !== null);
+  // PostgREST returns at most PAGE_SIZE rows per request, so page through the user's buildings.
+  const existing: { name: string; address: string | null; city: string | null }[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("buildings")
+      .select("name,address,city")
+      .order("id")
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) return json({ error: error.message }, 400);
+    existing.push(...data);
+    if (data.length < PAGE_SIZE) break;
+  }
 
-  const skipped = raw.length - rows.length;
-  if (rows.length === 0) return json({ inserted: 0, skipped });
+  const { rows, duplicates, invalid } = prepareImport(raw, existing);
 
-  const { error } = await supabase.from("buildings").insert(rows);
-  if (error) return json({ error: error.message }, 400);
+  if (rows.length > 0) {
+    const { error } = await supabase
+      .from("buildings")
+      .insert(rows.map((r) => ({ ...r, user_id: userId })));
+    if (error) return json({ error: error.message }, 400);
+  }
 
-  return json({ inserted: rows.length, skipped });
+  const result: ImportResult = {
+    inserted: rows.length,
+    duplicates,
+    invalidCount: invalid.length,
+    invalid: invalid.slice(0, MAX_REPORTED_ISSUES),
+  };
+  return json(result);
 });
