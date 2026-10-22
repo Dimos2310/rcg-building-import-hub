@@ -16,8 +16,10 @@ Browser (static SPA, Firebase Hosting)
   └─ functions.invoke("import-buildings") ──► Edge Function (parses .xlsx, inserts rows as the caller)
 ```
 
-- `supabase/migrations/` – SQL migration (table, grants, RLS policies, index)
+- `supabase/migrations/` – SQL migrations (table, grants, RLS policies, index, value constraints)
 - `supabase/functions/import-buildings/` – Excel uploader (Deno). `xlsx.mjs` is the vendored SheetJS 0.20.3 build.
+- `supabase/functions/_shared/buildings.ts` – validation and duplicate rules used by the function, the edit dialog and the unit tests
+- `src/lib/buildings-api.ts` – data access for the buildings page
 - `firebase.json` – serves `dist/client` and rewrites every route to the SPA shell
 
 ## Local development
@@ -31,12 +33,12 @@ npm run dev
 ## Tests
 
 ```sh
-npm test            # unit/routing tests (vitest)
+npm test            # unit and routing tests (vitest)
 npm run test:e2e    # browser tests against the live app (Playwright, uses the installed Chrome)
 ```
 
 The signed-out e2e tests need nothing. The signed-in ones (login, refresh, template, import,
-bad file, sign out) run when you pass an existing confirmed user:
+edit, delete, export, bad file, sign out) run when you pass an existing confirmed user:
 `E2E_EMAIL=you@example.com E2E_PASSWORD=... npm run test:e2e`. They clean up the rows they create.
 Set `E2E_BASE_URL` to test a local build instead of the deployed site.
 
