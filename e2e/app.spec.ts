@@ -114,16 +114,16 @@ test.describe("signed in", () => {
     await expect(page.getByText("Imported 2 buildings.")).toBeVisible();
     await expect(page.getByText(/2 rows rejected/)).toBeVisible();
     await expect(page.getByText(/row 4: name is required/)).toBeVisible();
-    await expect(page.getByRole("cell", { name: `${PREFIX} Tower` })).toBeVisible();
-    await expect(page.getByRole("cell", { name: `${PREFIX} Annex` })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "no name here" })).toHaveCount(0);
-    await expect(page.getByRole("cell", { name: `${PREFIX} Broken` })).toHaveCount(0);
+    await expect(page.getByRole("cell", { name: `${PREFIX} Tower`, exact: true })).toBeVisible();
+    await expect(page.getByRole("cell", { name: `${PREFIX} Annex`, exact: true })).toBeVisible();
+    await expect(page.getByRole("cell", { name: "no name here", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("cell", { name: `${PREFIX} Broken`, exact: true })).toHaveCount(0);
 
     // Same file again: everything valid is now a duplicate, so nothing new is stored.
     await page.locator('input[type="file"]').setInputFiles(file());
     await expect(page.getByText("Nothing was imported.")).toBeVisible();
     await expect(page.getByText(/2 duplicates skipped/)).toBeVisible();
-    await expect(page.getByRole("cell", { name: `${PREFIX} Tower` })).toHaveCount(1);
+    await expect(page.getByRole("cell", { name: `${PREFIX} Tower`, exact: true })).toHaveCount(1);
   });
 
   test("a building can be edited and validation errors are shown", async ({ page }) => {
@@ -138,7 +138,7 @@ test.describe("signed in", () => {
         "edit.xlsx",
       ),
     );
-    await expect(page.getByRole("cell", { name })).toBeVisible();
+    await expect(page.getByRole("cell", { name, exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: `Edit ${name}` }).click();
     const dialog = page.getByRole("dialog");
@@ -161,12 +161,12 @@ test.describe("signed in", () => {
     await page
       .locator('input[type="file"]')
       .setInputFiles(workbook([["name"], [name]], "delete.xlsx"));
-    await expect(page.getByRole("cell", { name })).toBeVisible();
+    await expect(page.getByRole("cell", { name, exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: `Delete ${name}` }).click();
     const confirm = page.getByRole("alertdialog");
     await confirm.getByRole("button", { name: "Cancel" }).click();
-    await expect(page.getByRole("cell", { name })).toBeVisible();
+    await expect(page.getByRole("cell", { name, exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: `Delete ${name}` }).click();
     await page
@@ -174,7 +174,7 @@ test.describe("signed in", () => {
       .getByRole("button", { name: "Delete", exact: true })
       .click();
     await expect(page.getByText("Building deleted.")).toBeVisible();
-    await expect(page.getByRole("cell", { name })).toHaveCount(0);
+    await expect(page.getByRole("cell", { name, exact: true })).toHaveCount(0);
   });
 
   test("exporting includes the buildings imported earlier", async ({ page }) => {
@@ -187,7 +187,9 @@ test.describe("signed in", () => {
       "export-source.xlsx",
     );
     await page.locator('input[type="file"]').setInputFiles(file);
-    await expect(page.getByRole("cell", { name: `${PREFIX} Export Tower` })).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: `${PREFIX} Export Tower`, exact: true }),
+    ).toBeVisible();
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),
