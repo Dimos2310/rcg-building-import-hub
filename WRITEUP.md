@@ -2,7 +2,7 @@
 
 **Live app:** <https://rcg-building-import-hub.web.app>  
 **Repository:** <https://github.com/Dimos2310/rcg-building-import-hub>  
-**Ελληνική έκδοση / Greek version:** [WRITEUP.el.md](WRITEUP.el.md)
+**Ελληνική έκδοση / Greek version:** [WRITEUP.el.md](https://github.com/Dimos2310/rcg-building-import-hub/blob/main/WRITEUP.el.md)
 
 ## Summary
 
