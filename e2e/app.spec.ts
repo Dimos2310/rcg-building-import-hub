@@ -321,7 +321,8 @@ test.describe("signed in", () => {
     ]);
     const wb = XLSX.read(readFileSync((await download.path())!));
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]!]!);
-    expect(rows.filter((r) => String(r["name"]).startsWith(PREFIX))).toHaveLength(count);
+    // Other tests in this run leave rows with the same prefix, so count only this test's rows.
+    expect(rows.filter((r) => String(r["name"]).startsWith(`${PREFIX} Many `))).toHaveLength(count);
   });
 
   test("a file that is not a workbook is rejected with a message", async ({ page }) => {
