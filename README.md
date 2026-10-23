@@ -38,7 +38,7 @@ npm run test:e2e    # browser tests against the live app (Playwright, uses the i
 ```
 
 The signed-out e2e tests need nothing. The signed-in ones (login, refresh, template, import,
-edit, delete, export, bad file, sign out) run when you pass an existing confirmed user:
+edit, delete, bulk edit and delete, export, bad file, sign out) run when you pass an existing confirmed user:
 `E2E_EMAIL=you@example.com E2E_PASSWORD=... npm run test:e2e`. They clean up the rows they create.
 Set `E2E_BASE_URL` to test a local build instead of the deployed site.
 

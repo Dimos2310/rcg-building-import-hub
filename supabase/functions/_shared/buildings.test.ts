@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { duplicateKey, parseRow, prepareImport } from "./buildings.ts";
+import { duplicateKey, parsePatch, parseRow, prepareImport } from "./buildings.ts";
 
 describe("parseRow", () => {
   it("accepts a full row and normalises header names", () => {
@@ -112,5 +112,34 @@ describe("prepareImport", () => {
 
   it("returns nothing for an empty sheet", () => {
     expect(prepareImport([], existing)).toEqual({ rows: [], duplicates: 0, invalid: [] });
+  });
+});
+
+describe("parsePatch", () => {
+  it("keeps only the fields that were filled in", () => {
+    expect(
+      parsePatch({ address: "", city: " Patras ", country: "", floors: "", year_built: "2005" }),
+    ).toEqual({ value: { city: "Patras", year_built: 2005 } });
+  });
+
+  it("ignores a name, because a bulk rename makes no sense", () => {
+    expect(parsePatch({ name: "Everything", country: "Greece" })).toEqual({
+      value: { country: "Greece" },
+    });
+  });
+
+  it("requires at least one field", () => {
+    expect(parsePatch({ city: "", floors: "" })).toEqual({
+      error: "fill in at least one field to change",
+    });
+  });
+
+  it("rejects invalid numbers and over-long text", () => {
+    expect(parsePatch({ floors: "999" })).toEqual({
+      error: "floors must be a whole number between 0 and 300",
+    });
+    expect(parsePatch({ city: "x".repeat(201) })).toEqual({
+      error: "city is longer than 200 characters",
+    });
   });
 });

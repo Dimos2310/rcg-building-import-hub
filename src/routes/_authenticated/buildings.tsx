@@ -7,7 +7,13 @@ import { Pencil, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { TEMPLATE_COLUMNS, describeImport } from "@/lib/buildings";
 import { importBuildingsFile, listBuildings, type Building } from "@/lib/buildings-api";
-import { DeleteBuildingDialog, EditBuildingDialog } from "@/components/buildings/building-dialogs";
+import {
+  BulkDeleteDialog,
+  BulkEditDialog,
+  DeleteBuildingDialog,
+  EditBuildingDialog,
+} from "@/components/buildings/building-dialogs";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -65,6 +71,19 @@ function BuildingsPage() {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<Building | null>(null);
   const [deleting, setDeleting] = useState<Building | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState<"edit" | "delete" | null>(null);
+
+  // Drop ids that no longer exist (deleted or imported away) so counts stay truthful.
+  const selectedIds = buildings.filter((b) => selected.has(b.id)).map((b) => b.id);
+  const allSelected = buildings.length > 0 && selectedIds.length === buildings.length;
+
+  function toggle(id: string, on: boolean) {
+    const next = new Set(selectedIds);
+    if (on) next.add(id);
+    else next.delete(id);
+    setSelected(next);
+  }
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["buildings"] });
 
@@ -124,10 +143,36 @@ function BuildingsPage() {
         </div>
       </header>
 
+      {selectedIds.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border bg-card px-4 py-2">
+          <span className="text-sm font-medium">{selectedIds.length} selected</span>
+          <Button variant="outline" size="sm" onClick={() => setBulk("edit")}>
+            Edit selected
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setBulk("delete")}>
+            Delete selected
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
+            Clear selection
+          </Button>
+        </div>
+      )}
+
       <div className="rounded-xl border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                <Checkbox
+                  aria-label="Select all"
+                  checked={allSelected ? true : selectedIds.length > 0 ? "indeterminate" : false}
+                  className="data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground"
+                  disabled={buildings.length === 0}
+                  onCheckedChange={(on) =>
+                    setSelected(on === true ? new Set(buildings.map((b) => b.id)) : new Set())
+                  }
+                />
+              </TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Address</TableHead>
               <TableHead>City</TableHead>
@@ -140,13 +185,20 @@ function BuildingsPage() {
           <TableBody>
             {buildings.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                   No buildings yet. Download the template, fill it in and import it.
                 </TableCell>
               </TableRow>
             ) : (
               buildings.map((b) => (
-                <TableRow key={b.id}>
+                <TableRow key={b.id} data-state={selected.has(b.id) ? "selected" : undefined}>
+                  <TableCell>
+                    <Checkbox
+                      aria-label={`Select ${b.name}`}
+                      checked={selected.has(b.id)}
+                      onCheckedChange={(on) => toggle(b.id, on === true)}
+                    />
+                  </TableCell>
                   <TableCell className="font-medium">{b.name}</TableCell>
                   <TableCell>{b.address}</TableCell>
                   <TableCell>{b.city}</TableCell>
@@ -178,6 +230,27 @@ function BuildingsPage() {
         </Table>
       </div>
 
+      {bulk === "edit" && (
+        <BulkEditDialog
+          ids={selectedIds}
+          onClose={() => setBulk(null)}
+          onSaved={() => {
+            setBulk(null);
+            void refresh();
+          }}
+        />
+      )}
+      {bulk === "delete" && (
+        <BulkDeleteDialog
+          ids={selectedIds}
+          onClose={() => setBulk(null)}
+          onDeleted={() => {
+            setBulk(null);
+            setSelected(new Set());
+            void refresh();
+          }}
+        />
+      )}
       {editing && (
         <EditBuildingDialog
           building={editing}

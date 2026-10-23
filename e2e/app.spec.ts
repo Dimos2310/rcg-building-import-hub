@@ -177,6 +177,51 @@ test.describe("signed in", () => {
     await expect(page.getByRole("cell", { name, exact: true })).toHaveCount(0);
   });
 
+  test("several buildings can be edited and deleted together", async ({ page }) => {
+    await login(page);
+    const names = [`${PREFIX} Bulk A`, `${PREFIX} Bulk B`, `${PREFIX} Bulk C`];
+    await page
+      .locator('input[type="file"]')
+      .setInputFiles(
+        workbook(
+          [
+            ["name", "address", "city", "country", "floors", "year_built"],
+            ...names.map((n, i) => [n, `${i + 1} Bulk St`, "Athens", "Greece", 3, 2000]),
+          ],
+          "bulk.xlsx",
+        ),
+      );
+    for (const name of names) {
+      await expect(page.getByRole("cell", { name, exact: true })).toBeVisible();
+    }
+
+    // Select two of the three and change their city; the third must stay untouched.
+    await page.getByRole("checkbox", { name: `Select ${names[0]}` }).click();
+    await page.getByRole("checkbox", { name: `Select ${names[1]}` }).click();
+    await expect(page.getByText("2 selected")).toBeVisible();
+    await page.getByRole("button", { name: "Edit selected" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: "Apply to selected" }).click();
+    await expect(dialog.getByRole("alert")).toContainText("fill in at least one field");
+    await dialog.getByLabel("City").fill("Larissa");
+    await dialog.getByRole("button", { name: "Apply to selected" }).click();
+    await expect(page.getByText("Updated 2 buildings.")).toBeVisible();
+    await expect(page.getByRole("row").filter({ hasText: names[0]! })).toContainText("Larissa");
+    await expect(page.getByRole("row").filter({ hasText: names[1]! })).toContainText("Larissa");
+    await expect(page.getByRole("row").filter({ hasText: names[2]! })).toContainText("Athens");
+
+    // Delete the same two together.
+    await page.getByRole("button", { name: "Delete selected" }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Delete selected", exact: true })
+      .click();
+    await expect(page.getByText("Deleted 2 buildings.")).toBeVisible();
+    await expect(page.getByRole("cell", { name: names[0]!, exact: true })).toHaveCount(0);
+    await expect(page.getByRole("cell", { name: names[1]!, exact: true })).toHaveCount(0);
+    await expect(page.getByRole("cell", { name: names[2]!, exact: true })).toBeVisible();
+  });
+
   test("exporting includes the buildings imported earlier", async ({ page }) => {
     await login(page);
     const file = workbook(

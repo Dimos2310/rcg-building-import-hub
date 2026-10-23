@@ -98,6 +98,36 @@ export function parseRow(raw: Record<string, unknown>): ParsedRow {
   };
 }
 
+export type BuildingPatch = Partial<Omit<BuildingFields, "name">>;
+
+// Bulk edit: only the fields that were filled in are changed; empty fields keep each building's value.
+export function parsePatch(
+  raw: Record<string, unknown>,
+): { value: BuildingPatch } | { error: string } {
+  const errors: string[] = [];
+  const value: BuildingPatch = {};
+
+  for (const key of ["address", "city", "country"] as const) {
+    const text = toText(raw[key]);
+    if (text === null) continue;
+    if (text.length > LIMITS.text) errors.push(`${key} is longer than ${LIMITS.text} characters`);
+    else value[key] = text;
+  }
+
+  const floors = toWhole(raw["floors"], "floors", LIMITS.floorsMin, LIMITS.floorsMax);
+  if (floors instanceof Error) errors.push(floors.message);
+  else if (floors !== null) value.floors = floors;
+
+  const year = toWhole(raw["year_built"], "year_built", LIMITS.yearMin, LIMITS.yearMax);
+  if (year instanceof Error) errors.push(year.message);
+  else if (year !== null) value.year_built = year;
+
+  if (errors.length === 0 && Object.keys(value).length === 0) {
+    errors.push("fill in at least one field to change");
+  }
+  return errors.length > 0 ? { error: errors.join("; ") } : { value };
+}
+
 // Two buildings count as the same when name, address and city match, ignoring case and spacing.
 export function duplicateKey(b: Pick<BuildingFields, "name" | "address" | "city">): string {
   return [b.name, b.address, b.city]
