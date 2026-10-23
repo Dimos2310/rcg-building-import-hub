@@ -24,9 +24,9 @@ which prerenders one static shell that Firebase serves for every route, and remo
 code. The build output is plain static files, so it runs on Firebase's free Spark plan.
 
 "No SSR" did not mean "no server": the Excel import was a TanStack server function, which static
-hosting cannot run. The project's original README (its Lovable prompt) also asked for the uploader to be a Supabase
-Edge Function, but `AGENTS.md` showed it had been built as a server function instead. Moving the
-import to an Edge Function solved both problems.
+hosting cannot run. The project's original README quotes the prompt it was built from, which asked for the uploader to be
+a Supabase Edge Function, but `AGENTS.md` showed it had been built as a server function instead.
+Moving the import to an Edge Function solved both problems.
 
 ## 2. Architecture
 
@@ -39,8 +39,8 @@ Browser (static SPA on Firebase Hosting)
 
 Validation rules live in one pure module (`supabase/functions/_shared/buildings.ts`) used by the
 Edge Function, the edit UI and the unit tests. The page talks to Supabase through a small
-data-access module (`src/lib/buildings-api.ts`). Three migrations create the table, grants, RLS
-policies, value constraints and a cascading link to the user.
+data-access module (`src/lib/buildings-api.ts`). Three migrations create the table, grants, RLS policies, value constraints, and a foreign key to
+the user so their buildings are deleted with them.
 
 ## 3. Features
 
@@ -63,7 +63,7 @@ policies, value constraints and a cascading link to the user.
 | Skip duplicates rather than overwrite | Re-importing the same file is safe and never destroys edits | Two genuinely identical buildings cannot both be imported |
 | Reject bad rows individually and import the rest | Typical spreadsheets have a few mistakes; the user sees exactly which rows to fix | A partial import is possible, but it is always reported |
 | Inline editing instead of dialogs | Fewer clicks and no context switch; multi-row editing is natural in a table | Setting one value on many rows means typing it per row |
-| Sign-up left open, email confirmation required | Left to my judgement for a test. Reviewers can create their own account to try the app, and an account can only ever reach its own rows (RLS), needs a confirmed email, and is bound by the upload limits | Anyone on the internet can create an account, so a production version should be invite-only (one Supabase setting) |
+| Sign-up left open, email confirmation required | Left to my judgement for a test; reviewers can try the app, and each account reaches only its own rows (RLS) | Anyone can create an account, so production should be invite-only |
 | Vendored SheetJS 0.20.3 | The npm package is stuck on a version with known vulnerabilities, and Supabase's bundler cannot import from SheetJS's CDN | A 1 MB file lives in the repository |
 | Unit tests for rules, browser tests for flows | Rules are pure and cheap to test; the real risk is the integration of hosting, auth, function and RLS, so browser tests run against the deployed app | Browser tests need a real account |
 
@@ -81,7 +81,7 @@ policies, value constraints and a cascading link to the user.
 - Response headers: a Content-Security-Policy limited to the app and the Supabase project, `X-Content-Type-Options`, `X-Frame-Options`, a referrer policy and a permissions policy. I checked in Chrome that the app works and that other origins are blocked.
 - Upload limits (5 MB, 5000 rows), text length limits, and whole-number ranges, enforced in the function and again by the database.
 - No secrets in the repository or its history.
-- **Open sign-up, deliberately.** The app is on the public internet, so I assumed it is reachable by anyone and did not rely on network isolation. What a stranger can do with an account is limited: read, change or delete only their own buildings, never another user's, and only within the file, row and length limits. What remains is abuse of the free tier (many accounts, storage use, confirmation emails). Because the task is a test and reviewers need to be able to try the app, I kept sign-up open. For a real deployment I would switch it to invite-only (Authentication → Sign In / Providers → disable sign-ups, then create users from the dashboard or an admin function) and add rate limiting; behind a private network the same setting would carry even less risk.
+- **Open sign-up, deliberately.** I assumed the app is reachable by anyone. An account can only read, change or delete its own buildings, within the upload and length limits. The remaining risk is abuse of the free tier (many accounts, storage, emails). Since reviewers need to try the app, I kept sign-up open; for production I would make it invite-only and add rate limiting.
 
 ## 7. Testing
 
