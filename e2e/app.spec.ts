@@ -54,6 +54,18 @@ test.describe("signed out", () => {
     await expect(page).toHaveURL(/\/auth$/);
   });
 
+  test("pages load without React hydration errors", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/auth$/);
+    await page.goto("/auth");
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
   test("an unknown route shows the not-found page", async ({ page }) => {
     await page.goto("/some/deep/link");
     await expect(page.getByText("Page not found")).toBeVisible();
@@ -278,6 +290,38 @@ test.describe("signed in", () => {
       floors: 7,
       year_built: 2010,
     });
+  });
+
+  test("more than 1000 buildings are all listed and exported", async ({ page }) => {
+    test.setTimeout(120_000);
+    await login(page);
+    const count = 1100;
+    await page
+      .locator('input[type="file"]')
+      .setInputFiles(
+        workbook(
+          [
+            ["name", "city"],
+            ...Array.from({ length: count }, (_, i) => [`${PREFIX} Many ${i}`, "Athens"]),
+          ],
+          "many.xlsx",
+        ),
+      );
+    await expect(page.getByText(`Imported ${count} buildings.`)).toBeVisible({ timeout: 60_000 });
+
+    // Supabase returns 1000 rows per request; the page must still show every row.
+    await expect(async () => {
+      const text = (await page.getByText(/^\d+ total$/).textContent()) ?? "";
+      expect(Number.parseInt(text, 10)).toBeGreaterThanOrEqual(count);
+    }).toPass({ timeout: 30_000 });
+
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "Export Excel" }).click(),
+    ]);
+    const wb = XLSX.read(readFileSync((await download.path())!));
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]!]!);
+    expect(rows.filter((r) => String(r["name"]).startsWith(PREFIX))).toHaveLength(count);
   });
 
   test("a file that is not a workbook is rejected with a message", async ({ page }) => {

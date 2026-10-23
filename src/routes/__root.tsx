@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  ClientOnly,
   Outlet,
   Link,
   createRootRouteWithContext,
@@ -128,7 +129,10 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
+      {/* The static shell is prerendered at "/" but served for every route, so render pages on the client only to keep the first render in step with it. */}
+      <ClientOnly fallback={null}>
+        <Outlet />
+      </ClientOnly>
       <Toaster />
     </QueryClientProvider>
   );

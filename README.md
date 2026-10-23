@@ -7,6 +7,17 @@ Login page plus a private page that lists buildings and imports them from an Exc
 - Live app: https://rcg-building-import-hub.web.app
 - Design notes, SSR decision, rationale and issues: [WRITEUP.md](WRITEUP.md) (English) · [WRITEUP.el.md](WRITEUP.el.md) (Ελληνικά)
 
+## Original project brief
+
+The repository started from this prompt (see the commit history for the original README):
+
+> Create an app with no SSR tanstack react start with supabase a login page and a private page
+> that has a table that lists buildings and can take an excel with building and import them on the
+> db there should be also a excel template. The asset uploader should be in an edge function. it
+> should have supabase migration files
+
+The assessment task was to deploy it (static frontend on Firebase, backend on Supabase).
+
 ## Architecture
 
 ```

@@ -1,18 +1,25 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { collectPages } from "../../supabase/functions/_shared/pagination.ts";
 import type { BuildingFields, ImportResult } from "../../supabase/functions/_shared/buildings.ts";
 
 export type Building = Database["public"]["Tables"]["buildings"]["Row"];
 
 // Data access for the buildings page. Row-level security scopes every call to the signed-in user.
 
+// Supabase returns at most 1000 rows per request, so read every page. The id tie-break keeps the
+// order stable across pages when many rows share a created_at (a bulk import inserts them together).
 export async function listBuildings(): Promise<Building[]> {
-  const { data, error } = await supabase
-    .from("buildings")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return data;
+  return collectPages(async (from, to) => {
+    const { data, error } = await supabase
+      .from("buildings")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, to);
+    if (error) throw error;
+    return data;
+  });
 }
 
 export async function updateBuilding(id: string, fields: BuildingFields): Promise<void> {

@@ -5,11 +5,11 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as XLSX from "./xlsx.mjs";
 import { prepareImport, type ImportResult } from "../_shared/buildings.ts";
+import { collectPages } from "../_shared/pagination.ts";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_ROWS = 5000;
 const MAX_REPORTED_ISSUES = 20;
-const PAGE_SIZE = 1000;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -66,17 +66,19 @@ Deno.serve(async (req) => {
   }
   if (raw.length > MAX_ROWS) return json({ error: `Too many rows (max ${MAX_ROWS}).` }, 413);
 
-  // PostgREST returns at most PAGE_SIZE rows per request, so page through the user's buildings.
-  const existing: { name: string; address: string | null; city: string | null }[] = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("buildings")
-      .select("name,address,city")
-      .order("id")
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) return json({ error: error.message }, 400);
-    existing.push(...data);
-    if (data.length < PAGE_SIZE) break;
+  let existing: { name: string; address: string | null; city: string | null }[];
+  try {
+    existing = await collectPages(async (from, to) => {
+      const { data, error } = await supabase
+        .from("buildings")
+        .select("name,address,city")
+        .order("id")
+        .range(from, to);
+      if (error) throw new Error(error.message);
+      return data;
+    });
+  } catch (e) {
+    return json({ error: (e as Error).message }, 400);
   }
 
   const { rows, duplicates, invalid } = prepareImport(raw, existing);
