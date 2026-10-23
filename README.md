@@ -5,7 +5,7 @@ Login page plus a private page that lists buildings and imports them from an Exc
 **Supabase** (Auth, Postgres with RLS, and an Edge Function for the Excel import).
 
 - Live app: https://rcg-building-import-hub.web.app
-- Design notes, SSR decision and issues: [WRITEUP.md](WRITEUP.md)
+- Design notes, SSR decision, rationale and issues: [WRITEUP.md](WRITEUP.md) (English) · [WRITEUP.el.md](WRITEUP.el.md) (Ελληνικά)
 
 ## Architecture
 

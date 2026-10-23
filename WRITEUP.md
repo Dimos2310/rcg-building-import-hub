@@ -1,66 +1,106 @@
-# Write-up
+# Building Import Hub – Write-up
 
-**Live app:** https://rcg-building-import-hub.web.app  
-**Repository:** https://github.com/Dimos2310/rcg-building-import-hub
+**Live app:** <https://rcg-building-import-hub.web.app>  
+**Repository:** <https://github.com/Dimos2310/rcg-building-import-hub>  
+**Ελληνική έκδοση / Greek version:** [WRITEUP.el.md](WRITEUP.el.md)
 
-## SSR decision: not needed, removed
+## Summary
 
-The app does not need server-side rendering. Every page except the login form sits behind
-authentication, so there is nothing for crawlers to index. The session lives in the browser
-(supabase-js, localStorage), so the server could not render a signed-in page anyway, and all
-data comes from Supabase over HTTPS. The repository already had `defaultSsr: false`, but that
-only disables rendering; it was still built as a server app (Nitro, Cloudflare target) and
-still contained server-only code. I removed that and switched TanStack Start to SPA mode,
-which prerenders one static shell (`_shell.html`) that Firebase serves for every route. The
-build output is plain static files, so it runs on Firebase Hosting's free Spark plan.
+The app is deployed end to end on free tiers: a static React single-page app on **Firebase
+Hosting**, backed by a **Supabase** project (Auth, Postgres with row-level security, and an Edge
+Function for the Excel import). I assessed whether SSR was needed, concluded it was not, and
+removed it. Beyond getting it running I made the import robust (validation, duplicate handling,
+clear feedback), added the data operations a user needs (edit, delete, export), hardened the
+deployment, and covered the behaviour with unit and browser tests that run against the live app.
 
-## What had to change
+## 1. SSR decision: not needed, removed
 
-"No SSR" did not mean "no server". The Excel import was a TanStack `createServerFn`, which needs
-a server runtime that static hosting does not have. The original brief also asked for the
-uploader to be a Supabase Edge Function, which did not exist. So the import is now an Edge
-Function (`supabase/functions/import-buildings`): the browser posts the file as multipart form
-data, the function verifies the caller's JWT, parses the workbook, and inserts the rows with the
-caller's own token, so the existing RLS policies decide what can be written. The import validates
-every row (whole numbers in range, text length), skips duplicates (same name, address and city,
-also against rows the user already has) and reports rejected rows by spreadsheet row number
-instead of silently storing bad values. I also removed the
-now-dead server code (Nitro, the server entry, auth middleware, the service-role client,
-Drizzle) and the committed `.env` that pointed at the original Lovable backend.
+Every page except the login form sits behind authentication, so there is nothing for crawlers to
+index. The session lives in the browser (supabase-js), so a server could not render a signed-in
+page anyway, and all data comes from Supabase over HTTPS. The repository already had
+`defaultSsr: false`, but that only disables rendering: it was still built as a server app (Nitro,
+Cloudflare target) and still contained server-only code. I switched TanStack Start to SPA mode,
+which prerenders one static shell that Firebase serves for every route, and removed the server
+code. The build output is plain static files, so it runs on Firebase's free Spark plan.
 
-## Product decisions
+"No SSR" did not mean "no server": the Excel import was a TanStack server function, which static
+hosting cannot run. The original brief also asked for the uploader to be a Supabase Edge
+Function, which did not exist. Moving the import there solved both problems.
 
-Confirmed with the hiring team: data is separated per user and each user can do whatever they
-want with their own data. So row-level security stays per user, and the table now has Edit and
-Delete (with confirmation) per row: the pencil turns the row into inputs in place, and selecting several rows lets you edit them together (each keeps its own values, one Save all) or delete them together, next to Import, the Excel template and an Export button that
-downloads the user's current buildings with the same columns as the template. Sign-up stays open,
-with email confirmation required, since this is a test and reviewers can create their own account;
-it can be switched off in Supabase if the app should be invite-only.
+## 2. Architecture
 
-## Deployment choices
+```text
+Browser (static SPA on Firebase Hosting)
+  ├─ supabase-js ──► Supabase Auth             email + password
+  ├─ supabase-js ──► Postgres via PostgREST    row-level security: each user sees only their rows
+  └─ functions.invoke("import-buildings") ──► Edge Function: parse, validate, de-duplicate, insert
+```
 
-- **Frontend:** Firebase Hosting (Spark plan). `firebase.json` rewrites all routes to the SPA shell so deep links like `/buildings` survive a refresh; hashed assets are cached immutably.
-- **Backend:** a free-tier Supabase project in eu-west-1. The schema is applied with `supabase db push` from the migration in the repo; the function is deployed with `supabase functions deploy`.
-- **Integration:** the frontend gets the Supabase URL and publishable key through `VITE_*` variables at build time. The publishable key is public by design; the service-role key is never used or shipped.
-- **User access:** the account for thomas.katsikadakos@redataset.com was created in the Supabase dashboard with "Auto Confirm User", so it can sign in immediately. Credentials are sent separately.
+Validation rules live in one pure module (`supabase/functions/_shared/buildings.ts`) used by the
+Edge Function, the edit UI and the unit tests. The page talks to Supabase through a small
+data-access module (`src/lib/buildings-api.ts`). Two migrations create the table, grants, RLS
+policies and value constraints.
 
-## Issues and fixes
+## 3. Features
 
-- **Server code in a static build:** see above. The build is now verified to produce only `dist/client`, and I tested deep links (`/`, `/auth`, `/buildings`) with the Firebase Hosting emulator.
-- **Supabase refused my first function deploy:** the bundler cannot import from `cdn.sheetjs.com`. The npm `xlsx` package is stuck at 0.18.5 and has known vulnerabilities (prototype pollution, ReDoS), so I vendored the official SheetJS 0.20.3 build next to the function instead of downgrading.
-- **Frontend upgrade of the same library:** the browser bundle (template download) also uses SheetJS 0.20.3, installed from SheetJS's own tarball.
-- **Stale pages after a deploy:** the `no-cache` header first covered only `/_shell.html`, but `/`, `/auth` and `/buildings` are served through the SPA rewrite and got a one-hour cache, so a browser could show an old version after a redeploy. All HTML routes are now `no-cache`; hashed assets stay immutable.
-- **Security headers:** Firebase sends only HSTS by default. I added a CSP restricted to the app itself and the Supabase project, plus `X-Content-Type-Options`, `X-Frame-Options`, a referrer policy and a permissions policy, and checked in Chrome that the app works and other origins are blocked.
-- **Error handling:** `functions.invoke` hides the response body in its error object, so the page reads it and shows the function's own message (for example "File too large").
-- **Limits:** the function caps uploads at 5 MB and 5000 rows to stay inside the free tier's CPU limits.
+- **Login** with email and password, a private buildings page, and a route guard that redirects signed-out visitors.
+- **Per-user data:** every user works only on their own buildings.
+- **Excel template** to download, and **Export** of the user's current buildings with the same columns, so a file can be edited and imported again.
+- **Import** that validates each row (whole numbers in range, text length), skips duplicates (same name, address and city, ignoring case, also against rows the user already has), and reports rejected rows by spreadsheet row number.
+- **Edit in place:** the pencil turns a row into inputs; Enter saves, Escape cancels. Selecting several rows and choosing "Edit selected" edits them together, each with its own values, and "Save all" validates every row first and sends only the rows that changed.
+- **Delete** per row or for a selection, always with confirmation.
 
-## Known limitations
+## 4. Design decisions and why
 
-- Free Supabase projects pause after about a week of inactivity; if that happens, resume it from the dashboard.
-- Two users importing the same new building at the exact same moment could both insert it; duplicate detection is checked at import time, not enforced by a unique constraint (existing data could already contain duplicates).
-- The `previewAuthStorage` helper is Lovable-specific; outside the Lovable preview it falls back to plain `localStorage`, so I left it as is.
+| Decision | Reasoning | Trade-off accepted |
+| --- | --- | --- |
+| Static SPA instead of SSR | No SEO need, session is client-side, runs on the free plan | None relevant here |
+| Import as an Edge Function, not browser-side | Required by the brief; enforces size and validation limits on the server; runs with the user's own token so RLS applies | One more deployable to maintain |
+| Data separated per user | Confirmed with the hiring team; simplest safe model; enforced by RLS in the database, not by UI code | Users cannot share data |
+| One shared validation module, plus database CHECK constraints | Same rules for import, edit and tests; the database still protects itself against direct API calls | Rules must be changed in two places (code and migration) |
+| Skip duplicates rather than overwrite | Re-importing the same file is safe and never destroys edits | Two genuinely identical buildings cannot both be imported |
+| Reject bad rows individually and import the rest | Typical spreadsheets have a few mistakes; the user sees exactly which rows to fix | A partial import is possible, but it is always reported |
+| Inline editing instead of dialogs | Fewer clicks and no context switch; multi-row editing is natural in a table | Setting one value on many rows means typing it per row |
+| Sign-up left open, email confirmation required | It is a test, so reviewers can create their own account; strangers still need a real inbox | Can be closed in Supabase if the app should be invite-only |
+| Vendored SheetJS 0.20.3 | The npm package is stuck on a version with known vulnerabilities, and Supabase's bundler cannot import from SheetJS's CDN | A 1 MB file lives in the repository |
+| Unit tests for rules, browser tests for flows | Rules are pure and cheap to test; the real risk is the integration of hosting, auth, function and RLS, so browser tests run against the deployed app | Browser tests need a real account |
 
-## Tests
+## 5. Deployment
 
-- 22 unit tests (`npm test`, vitest) cover the validation and duplicate rules in `supabase/functions/_shared/buildings.ts` and the import messages.
-- 12 browser tests (`npm run test:e2e`, Playwright) run against the deployed app: route guard, login errors, login/refresh/sign-out, template, import with validation and duplicates, edit, delete, bulk edit and delete, export and rejection of a non-workbook file. The signed-in tests use an existing account passed through `E2E_EMAIL` and `E2E_PASSWORD` and clean up the rows they create.
+- **Frontend:** Firebase Hosting (Spark plan). `firebase.json` rewrites every route to the SPA shell so deep links such as `/buildings` survive a refresh. Hashed assets are cached immutably; HTML is never cached, so a redeploy shows up immediately.
+- **Backend:** free-tier Supabase project in eu-west-1. Schema applied with `supabase db push`, function deployed with `supabase functions deploy`.
+- **Integration:** the frontend receives the Supabase URL and publishable key through `VITE_*` variables at build time. The publishable key is public by design; the service-role key is never used or shipped, and the original committed `.env` (which pointed at another backend) was removed.
+- **User access:** an account for `thomas.katsikadakos@redataset.com` was created in the dashboard with "Auto Confirm User" and verified to sign in. Credentials are sent separately.
+
+## 6. Security
+
+- Row-level security on every operation; verified that anonymous reads return nothing and anonymous inserts are rejected.
+- The Edge Function requires a valid JWT and takes the user id from the token, never from the request.
+- Response headers: a Content-Security-Policy limited to the app and the Supabase project, `X-Content-Type-Options`, `X-Frame-Options`, a referrer policy and a permissions policy. I checked in Chrome that the app works and that other origins are blocked.
+- Upload limits (5 MB, 5000 rows), text length limits, and whole-number ranges, enforced in the function and again by the database.
+- No secrets in the repository or its history.
+
+## 7. Testing
+
+- **22 unit tests** (`npm test`, vitest): validation, duplicate detection, row numbering, import messages and edit helpers.
+- **12 browser tests** (`npm run test:e2e`, Playwright, real Chrome) against the deployed app: route guard, login errors, login/refresh/sign-out, template, import with validation and duplicates, in-place edit with validation errors, multi-row edit and delete, delete with confirmation, export and rejection of a non-workbook file. Signed-in tests use an account passed through `E2E_EMAIL` and `E2E_PASSWORD` and clean up the rows they create.
+
+## 8. Issues I ran into and how I solved them
+
+- **Server code in a static build.** Switching off SSR was not enough; I replaced Nitro with SPA mode, moved the import to an Edge Function, deleted the dead server code, and confirmed the output is static.
+- **Supabase refused my first function deploy.** Its bundler cannot import from `cdn.sheetjs.com`. Instead of downgrading to the vulnerable npm release, I vendored the official 0.20.3 build next to the function.
+- **Stale pages after a deploy.** My `no-cache` header matched only `/_shell.html`, but `/`, `/auth` and `/buildings` are served through the rewrite and got a one-hour cache, so a browser could show an old version. I noticed it when a browser kept showing an older build right after a deploy; all HTML routes are now `no-cache`.
+- **Silent data loss on import.** The original truncated or blanked bad values without telling anyone. Rows are now validated and rejected with a reason.
+- **Test brittleness.** Adding named action buttons made substring cell locators ambiguous, and a row count raced the table load; both were fixed with exact locators and an explicit wait.
+- **Error messages.** `functions.invoke` hides the response body in its error object, so the page reads it and shows the function's own message.
+
+## 9. Known limitations and next steps
+
+- **React hydration warning (#418)** appears in the browser console on page load. The app works normally because React recovers by rendering on the client; I have not yet traced its source.
+- **Duplicates are detected at import time, not enforced by a unique constraint.** Adding one would first require cleaning existing data; two users cannot clash because data is per user, but a double submit within the same moment could.
+- **CSP allows inline scripts and styles** because the static shell contains inline bootstrap scripts and static hosting cannot issue per-request nonces.
+- **Multi-row save is not a single transaction:** rows are saved independently, and any failure stays open for correction with its message.
+- Free Supabase projects pause after about a week of inactivity; resume from the dashboard if that happens.
+- `npm audit` reports a Vite advisory that affects only the development server, not the static site; I left the dependency range as the project pinned it.
+- The Lovable-generated files I did not need to touch keep their original formatting, so the lint formatter reports style issues there; I kept the diff limited to meaningful changes.
+- With more time: a unique constraint after a data cleanup, import rate limiting, pagination and sorting for large tables, CI running the unit and browser tests on every push, and invite-only sign-up.
