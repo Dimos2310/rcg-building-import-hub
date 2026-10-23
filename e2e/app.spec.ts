@@ -126,7 +126,7 @@ test.describe("signed in", () => {
     await expect(page.getByRole("cell", { name: `${PREFIX} Tower`, exact: true })).toHaveCount(1);
   });
 
-  test("a building can be edited and validation errors are shown", async ({ page }) => {
+  test("a building is edited in place and validation errors are shown", async ({ page }) => {
     await login(page);
     const name = `${PREFIX} Edit Me`;
     await page.locator('input[type="file"]').setInputFiles(
@@ -141,18 +141,28 @@ test.describe("signed in", () => {
     await expect(page.getByRole("cell", { name, exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: `Edit ${name}` }).click();
-    const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Floors").fill("999");
-    await dialog.getByRole("button", { name: "Save" }).click();
-    await expect(dialog.getByRole("alert")).toContainText("floors must be a whole number");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    const editRow = page
+      .getByRole("row")
+      .filter({ has: page.getByRole("textbox", { name: "Name" }) });
+    await editRow.getByRole("spinbutton", { name: "Floors" }).fill("999");
+    await editRow.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByRole("alert")).toContainText("floors must be a whole number");
 
-    await dialog.getByLabel("Floors").fill("6");
-    await dialog.getByLabel("City").fill("Thessaloniki");
-    await dialog.getByRole("button", { name: "Save" }).click();
+    await editRow.getByRole("spinbutton", { name: "Floors" }).fill("6");
+    await editRow.getByRole("textbox", { name: "City" }).fill("Thessaloniki");
+    await editRow.getByRole("textbox", { name: "City" }).press("Enter");
     await expect(page.getByText("Building updated.")).toBeVisible();
     const row = page.getByRole("row").filter({ hasText: name });
     await expect(row).toContainText("Thessaloniki");
     await expect(row).toContainText("6");
+    await expect(page.getByRole("textbox", { name: "Name" })).toHaveCount(0);
+
+    // Escape discards an edit.
+    await page.getByRole("button", { name: `Edit ${name}` }).click();
+    await page.getByRole("textbox", { name: "City" }).fill("Nowhere");
+    await page.getByRole("textbox", { name: "City" }).press("Escape");
+    await expect(page.getByRole("row").filter({ hasText: name })).toContainText("Thessaloniki");
   });
 
   test("a building can be deleted after confirming", async ({ page }) => {

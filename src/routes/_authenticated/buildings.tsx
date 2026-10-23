@@ -3,7 +3,6 @@ import { queryOptions, useQueryClient, useSuspenseQuery } from "@tanstack/react-
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
-import { Pencil, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { TEMPLATE_COLUMNS, describeImport } from "@/lib/buildings";
 import { importBuildingsFile, listBuildings, type Building } from "@/lib/buildings-api";
@@ -11,8 +10,8 @@ import {
   BulkDeleteDialog,
   BulkEditDialog,
   DeleteBuildingDialog,
-  EditBuildingDialog,
 } from "@/components/buildings/building-dialogs";
+import { BuildingRow } from "@/components/buildings/building-row";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
@@ -69,7 +68,7 @@ function BuildingsPage() {
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const [editing, setEditing] = useState<Building | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Building | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<"edit" | "delete" | null>(null);
@@ -191,39 +190,17 @@ function BuildingsPage() {
               </TableRow>
             ) : (
               buildings.map((b) => (
-                <TableRow key={b.id} data-state={selected.has(b.id) ? "selected" : undefined}>
-                  <TableCell>
-                    <Checkbox
-                      aria-label={`Select ${b.name}`}
-                      checked={selected.has(b.id)}
-                      onCheckedChange={(on) => toggle(b.id, on === true)}
-                    />
-                  </TableCell>
-                  <TableCell className="font-medium">{b.name}</TableCell>
-                  <TableCell>{b.address}</TableCell>
-                  <TableCell>{b.city}</TableCell>
-                  <TableCell>{b.country}</TableCell>
-                  <TableCell className="text-right">{b.floors}</TableCell>
-                  <TableCell className="text-right">{b.year_built}</TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Edit ${b.name}`}
-                      onClick={() => setEditing(b)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Delete ${b.name}`}
-                      onClick={() => setDeleting(b)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                <BuildingRow
+                  key={b.id}
+                  building={b}
+                  selected={selected.has(b.id)}
+                  editing={editingId === b.id}
+                  onSelect={(on) => toggle(b.id, on)}
+                  onStartEdit={() => setEditingId(b.id)}
+                  onStopEdit={() => setEditingId(null)}
+                  onDelete={() => setDeleting(b)}
+                  onSaved={() => void refresh()}
+                />
               ))
             )}
           </TableBody>
@@ -247,16 +224,6 @@ function BuildingsPage() {
           onDeleted={() => {
             setBulk(null);
             setSelected(new Set());
-            void refresh();
-          }}
-        />
-      )}
-      {editing && (
-        <EditBuildingDialog
-          building={editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
             void refresh();
           }}
         />
