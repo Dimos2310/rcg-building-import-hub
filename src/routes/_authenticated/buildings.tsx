@@ -4,13 +4,21 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
-import { TEMPLATE_COLUMNS, describeImport } from "@/lib/buildings";
-import { importBuildingsFile, listBuildings, type Building } from "@/lib/buildings-api";
+import { parseRow } from "../../../supabase/functions/_shared/buildings.ts";
 import {
-  BulkDeleteDialog,
-  BulkEditDialog,
-  DeleteBuildingDialog,
-} from "@/components/buildings/building-dialogs";
+  TEMPLATE_COLUMNS,
+  describeImport,
+  isUnchanged,
+  toDraft,
+  type Draft,
+} from "@/lib/buildings";
+import {
+  importBuildingsFile,
+  listBuildings,
+  updateBuilding,
+  type Building,
+} from "@/lib/buildings-api";
+import { BulkDeleteDialog, DeleteBuildingDialog } from "@/components/buildings/building-dialogs";
 import { BuildingRow } from "@/components/buildings/building-row";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
@@ -68,10 +76,12 @@ function BuildingsPage() {
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<Building | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulk, setBulk] = useState<"edit" | "delete" | null>(null);
+  const [bulkDelete, setBulkDelete] = useState(false);
 
   // Drop ids that no longer exist (deleted or imported away) so counts stay truthful.
   const selectedIds = buildings.filter((b) => selected.has(b.id)).map((b) => b.id);
@@ -85,6 +95,67 @@ function BuildingsPage() {
   }
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["buildings"] });
+
+  const draftIds = Object.keys(drafts);
+
+  function startEdit(ids: string[]) {
+    const byId = new Map(buildings.map((b) => [b.id, b]));
+    const next = { ...drafts };
+    for (const id of ids) {
+      const b = byId.get(id);
+      if (b && !next[id]) next[id] = toDraft(b);
+    }
+    setDrafts(next);
+  }
+
+  function stopEdit(ids: string[]) {
+    const omit = <T,>(record: Record<string, T>) =>
+      Object.fromEntries(Object.entries(record).filter(([id]) => !ids.includes(id)));
+    setDrafts((d) => omit(d));
+    setRowErrors((e) => omit(e));
+  }
+
+  // Validates every row first; nothing is sent if any row is invalid.
+  async function saveRows(ids: string[]) {
+    const byId = new Map(buildings.map((b) => [b.id, b]));
+    const invalid: Record<string, string> = {};
+    const changed: { id: string; fields: Parameters<typeof updateBuilding>[1] }[] = [];
+    const untouched: string[] = [];
+
+    for (const id of ids) {
+      const building = byId.get(id);
+      const draft = drafts[id];
+      if (!building || !draft) continue;
+      const parsed = parseRow(draft);
+      if (parsed.error !== undefined) invalid[id] = parsed.error;
+      else if (isUnchanged(building, parsed.value)) untouched.push(id);
+      else changed.push({ id, fields: parsed.value });
+    }
+    if (Object.keys(invalid).length > 0) {
+      setRowErrors((e) => ({ ...e, ...invalid }));
+      return;
+    }
+
+    setSaving(true);
+    const results = await Promise.allSettled(changed.map((c) => updateBuilding(c.id, c.fields)));
+    const saved = [...untouched];
+    const failed: Record<string, string> = {};
+    results.forEach((r, i) => {
+      const id = changed[i]!.id;
+      if (r.status === "fulfilled") saved.push(id);
+      else failed[id] = (r.reason as Error).message;
+    });
+    stopEdit(saved);
+    setRowErrors((e) => ({ ...e, ...failed }));
+    setSaving(false);
+
+    const updated = results.filter((r) => r.status === "fulfilled").length;
+    if (updated > 0) {
+      toast.success(updated === 1 ? "Building updated." : `Updated ${updated} buildings.`);
+    }
+    if (Object.keys(failed).length > 0) toast.error("Some changes could not be saved.");
+    await refresh();
+  }
 
   async function onFile(file: File) {
     setBusy(true);
@@ -142,13 +213,32 @@ function BuildingsPage() {
         </div>
       </header>
 
+      {draftIds.length > 1 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border bg-card px-4 py-2">
+          <span className="text-sm font-medium">Editing {draftIds.length} buildings</span>
+          <Button size="sm" disabled={saving} onClick={() => void saveRows(draftIds)}>
+            {saving ? "Saving…" : "Save all"}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => stopEdit(draftIds)}>
+            Cancel all
+          </Button>
+        </div>
+      )}
+
       {selectedIds.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border bg-card px-4 py-2">
           <span className="text-sm font-medium">{selectedIds.length} selected</span>
-          <Button variant="outline" size="sm" onClick={() => setBulk("edit")}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              startEdit(selectedIds);
+              setSelected(new Set());
+            }}
+          >
             Edit selected
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setBulk("delete")}>
+          <Button variant="outline" size="sm" onClick={() => setBulkDelete(true)}>
             Delete selected
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
@@ -194,12 +284,15 @@ function BuildingsPage() {
                   key={b.id}
                   building={b}
                   selected={selected.has(b.id)}
-                  editing={editingId === b.id}
+                  draft={drafts[b.id] ?? null}
+                  error={rowErrors[b.id] ?? null}
+                  busy={saving}
                   onSelect={(on) => toggle(b.id, on)}
-                  onStartEdit={() => setEditingId(b.id)}
-                  onStopEdit={() => setEditingId(null)}
+                  onStartEdit={() => startEdit([b.id])}
+                  onDraftChange={(draft) => setDrafts((d) => ({ ...d, [b.id]: draft }))}
+                  onSave={() => void saveRows([b.id])}
+                  onCancel={() => stopEdit([b.id])}
                   onDelete={() => setDeleting(b)}
-                  onSaved={() => void refresh()}
                 />
               ))
             )}
@@ -207,22 +300,12 @@ function BuildingsPage() {
         </Table>
       </div>
 
-      {bulk === "edit" && (
-        <BulkEditDialog
-          ids={selectedIds}
-          onClose={() => setBulk(null)}
-          onSaved={() => {
-            setBulk(null);
-            void refresh();
-          }}
-        />
-      )}
-      {bulk === "delete" && (
+      {bulkDelete && (
         <BulkDeleteDialog
           ids={selectedIds}
-          onClose={() => setBulk(null)}
+          onClose={() => setBulkDelete(false)}
           onDeleted={() => {
-            setBulk(null);
+            setBulkDelete(false);
             setSelected(new Set());
             void refresh();
           }}

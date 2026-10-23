@@ -32,7 +32,7 @@ Drizzle) and the committed `.env` that pointed at the original Lovable backend.
 
 Confirmed with the hiring team: data is separated per user and each user can do whatever they
 want with their own data. So row-level security stays per user, and the table now has Edit and
-Delete (with confirmation) per row, plus row selection for editing or deleting several buildings at once, next to Import, the Excel template and an Export button that
+Delete (with confirmation) per row: the pencil turns the row into inputs in place, and selecting several rows lets you edit them together (each keeps its own values, one Save all) or delete them together, next to Import, the Excel template and an Export button that
 downloads the user's current buildings with the same columns as the template. Sign-up stays open,
 with email confirmation required, since this is a test and reviewers can create their own account;
 it can be switched off in Supabase if the app should be invite-only.
@@ -62,5 +62,5 @@ it can be switched off in Supabase if the app should be invite-only.
 
 ## Tests
 
-- 24 unit tests (`npm test`, vitest) cover the validation and duplicate rules in `supabase/functions/_shared/buildings.ts` and the import messages.
+- 22 unit tests (`npm test`, vitest) cover the validation and duplicate rules in `supabase/functions/_shared/buildings.ts` and the import messages.
 - 12 browser tests (`npm run test:e2e`, Playwright) run against the deployed app: route guard, login errors, login/refresh/sign-out, template, import with validation and duplicates, edit, delete, bulk edit and delete, export and rejection of a non-workbook file. The signed-in tests use an existing account passed through `E2E_EMAIL` and `E2E_PASSWORD` and clean up the rows they create.

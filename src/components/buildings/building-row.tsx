@@ -1,103 +1,50 @@
-import { useState, type KeyboardEvent } from "react";
+import type { KeyboardEvent } from "react";
 import { Check, Pencil, Trash2, X } from "lucide-react";
-import { toast } from "sonner";
-import { parseRow } from "../../../supabase/functions/_shared/buildings.ts";
-import { updateBuilding, type Building } from "@/lib/buildings-api";
+import type { Building } from "@/lib/buildings-api";
+import type { Draft } from "@/lib/buildings";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { TableCell, TableRow } from "@/components/ui/table";
 
-type Draft = {
-  name: string;
-  address: string;
-  city: string;
-  country: string;
-  floors: string;
-  year_built: string;
-};
-
-function toDraft(b: Building): Draft {
-  return {
-    name: b.name,
-    address: b.address ?? "",
-    city: b.city ?? "",
-    country: b.country ?? "",
-    floors: b.floors?.toString() ?? "",
-    year_built: b.year_built?.toString() ?? "",
-  };
-}
-
-// One table row that switches to inline editing in place; Enter saves, Escape cancels.
+// One table row. With a draft it shows inputs in place (Enter saves, Escape cancels).
 export function BuildingRow({
   building,
   selected,
-  editing,
+  draft,
+  error,
+  busy,
   onSelect,
   onStartEdit,
-  onStopEdit,
+  onDraftChange,
+  onSave,
+  onCancel,
   onDelete,
-  onSaved,
 }: {
   building: Building;
   selected: boolean;
-  editing: boolean;
+  draft: Draft | null;
+  error: string | null;
+  busy: boolean;
   onSelect: (on: boolean) => void;
   onStartEdit: () => void;
-  onStopEdit: () => void;
+  onDraftChange: (draft: Draft) => void;
+  onSave: () => void;
+  onCancel: () => void;
   onDelete: () => void;
-  onSaved: () => void;
 }) {
-  const [draft, setDraft] = useState<Draft>(() => toDraft(building));
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  function start() {
-    setDraft(toDraft(building));
-    setError(null);
-    onStartEdit();
-  }
-
-  async function save() {
-    const parsed = parseRow(draft);
-    if (parsed.error !== undefined) {
-      setError(parsed.error);
-      return;
-    }
-    setBusy(true);
-    try {
-      await updateBuilding(building.id, parsed.value);
-      toast.success("Building updated.");
-      onSaved();
-      onStopEdit();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function onKeyDown(e: KeyboardEvent) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      void save();
-    } else if (e.key === "Escape") {
-      onStopEdit();
-    }
-  }
-
   const selectCell = (
     <TableCell>
       <Checkbox
         aria-label={`Select ${building.name}`}
         checked={selected}
-        disabled={editing}
+        disabled={draft !== null}
         onCheckedChange={(on) => onSelect(on === true)}
       />
     </TableCell>
   );
 
-  if (!editing) {
+  if (!draft) {
     return (
       <TableRow data-state={selected ? "selected" : undefined}>
         {selectCell}
@@ -108,7 +55,12 @@ export function BuildingRow({
         <TableCell className="text-right">{building.floors}</TableCell>
         <TableCell className="text-right">{building.year_built}</TableCell>
         <TableCell className="text-right">
-          <Button variant="ghost" size="icon" aria-label={`Edit ${building.name}`} onClick={start}>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Edit ${building.name}`}
+            onClick={onStartEdit}
+          >
             <Pencil className="h-4 w-4" />
           </Button>
           <Button
@@ -124,13 +76,22 @@ export function BuildingRow({
     );
   }
 
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      onSave();
+    } else if (e.key === "Escape") {
+      onCancel();
+    }
+  }
+
   const field = (key: keyof Draft, label: string, className = "", type = "text") => (
     <Input
       aria-label={label}
       type={type}
       className={`h-8 ${className}`}
       value={draft[key]}
-      onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+      onChange={(e) => onDraftChange({ ...draft, [key]: e.target.value })}
       onKeyDown={onKeyDown}
     />
   );
@@ -146,16 +107,10 @@ export function BuildingRow({
         <TableCell>{field("floors", "Floors", "w-20 text-right", "number")}</TableCell>
         <TableCell>{field("year_built", "Year built", "w-24 text-right", "number")}</TableCell>
         <TableCell className="text-right">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Save"
-            disabled={busy}
-            onClick={() => void save()}
-          >
+          <Button variant="ghost" size="icon" aria-label="Save" disabled={busy} onClick={onSave}>
             <Check className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" aria-label="Cancel" onClick={onStopEdit}>
+          <Button variant="ghost" size="icon" aria-label="Cancel" onClick={onCancel}>
             <X className="h-4 w-4" />
           </Button>
         </TableCell>

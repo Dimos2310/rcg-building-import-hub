@@ -1,4 +1,5 @@
-import type { ImportResult } from "../../supabase/functions/_shared/buildings.ts";
+import type { BuildingFields, ImportResult } from "../../supabase/functions/_shared/buildings.ts";
+import type { Building } from "@/lib/buildings-api";
 
 export { TEMPLATE_COLUMNS } from "../../supabase/functions/_shared/buildings.ts";
 
@@ -37,4 +38,37 @@ export function describeImport(res: ImportResult): {
     title: `Imported ${res.inserted} building${res.inserted === 1 ? "" : "s"}.`,
     ...(description && { description }),
   };
+}
+
+// Text the edit inputs hold while a row is being edited.
+export type Draft = {
+  name: string;
+  address: string;
+  city: string;
+  country: string;
+  floors: string;
+  year_built: string;
+};
+
+export function toDraft(b: Building): Draft {
+  return {
+    name: b.name,
+    address: b.address ?? "",
+    city: b.city ?? "",
+    country: b.country ?? "",
+    floors: b.floors?.toString() ?? "",
+    year_built: b.year_built?.toString() ?? "",
+  };
+}
+
+// True when saving `fields` would not change the stored building, so no request is needed.
+export function isUnchanged(b: Building, fields: BuildingFields): boolean {
+  return (
+    b.name === fields.name &&
+    b.address === fields.address &&
+    b.city === fields.city &&
+    b.country === fields.country &&
+    b.floors === fields.floors &&
+    b.year_built === fields.year_built
+  );
 }

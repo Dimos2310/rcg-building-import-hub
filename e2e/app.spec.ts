@@ -187,7 +187,9 @@ test.describe("signed in", () => {
     await expect(page.getByRole("cell", { name, exact: true })).toHaveCount(0);
   });
 
-  test("several buildings can be edited and deleted together", async ({ page }) => {
+  test("several buildings are edited in place together, then deleted together", async ({
+    page,
+  }) => {
     await login(page);
     const names = [`${PREFIX} Bulk A`, `${PREFIX} Bulk B`, `${PREFIX} Bulk C`];
     await page
@@ -205,22 +207,37 @@ test.describe("signed in", () => {
       await expect(page.getByRole("cell", { name, exact: true })).toBeVisible();
     }
 
-    // Select two of the three and change their city; the third must stay untouched.
+    // "Edit selected" turns the two chosen rows into inputs, each keeping its own values.
     await page.getByRole("checkbox", { name: `Select ${names[0]}` }).click();
     await page.getByRole("checkbox", { name: `Select ${names[1]}` }).click();
     await expect(page.getByText("2 selected")).toBeVisible();
     await page.getByRole("button", { name: "Edit selected" }).click();
-    const dialog = page.getByRole("dialog");
-    await dialog.getByRole("button", { name: "Apply to selected" }).click();
-    await expect(dialog.getByRole("alert")).toContainText("fill in at least one field");
-    await dialog.getByLabel("City").fill("Larissa");
-    await dialog.getByRole("button", { name: "Apply to selected" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByText("Editing 2 buildings")).toBeVisible();
+    const editRow = (name: string) =>
+      page.getByRole("row").filter({
+        has: page.locator(`input[aria-label="Name"][value="${name}"]`),
+      });
+
+    // One invalid row blocks the whole save and shows its message.
+    await editRow(names[0]!).getByRole("spinbutton", { name: "Floors" }).fill("999");
+    await editRow(names[0]!).getByRole("textbox", { name: "City" }).fill("Larissa");
+    await editRow(names[1]!).getByRole("textbox", { name: "City" }).fill("Volos");
+    await page.getByRole("button", { name: "Save all" }).click();
+    await expect(page.getByRole("alert")).toContainText("floors must be a whole number");
+
+    await editRow(names[0]!).getByRole("spinbutton", { name: "Floors" }).fill("8");
+    await page.getByRole("button", { name: "Save all" }).click();
     await expect(page.getByText("Updated 2 buildings.")).toBeVisible();
-    await expect(page.getByRole("row").filter({ hasText: names[0]! })).toContainText("Larissa");
-    await expect(page.getByRole("row").filter({ hasText: names[1]! })).toContainText("Larissa");
-    await expect(page.getByRole("row").filter({ hasText: names[2]! })).toContainText("Athens");
+    const row = (name: string) => page.getByRole("row").filter({ hasText: name });
+    await expect(row(names[0]!)).toContainText("Larissa");
+    await expect(row(names[0]!)).toContainText("8");
+    await expect(row(names[1]!)).toContainText("Volos");
+    await expect(row(names[2]!)).toContainText("Athens");
 
     // Delete the same two together.
+    await page.getByRole("checkbox", { name: `Select ${names[0]}` }).click();
+    await page.getByRole("checkbox", { name: `Select ${names[1]}` }).click();
     await page.getByRole("button", { name: "Delete selected" }).click();
     await page
       .getByRole("alertdialog")

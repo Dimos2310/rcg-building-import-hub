@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { describeImport } from "./buildings";
+import type { Building } from "./buildings-api";
+import { describeImport, isUnchanged, toDraft } from "./buildings";
 
 describe("describeImport", () => {
   it("reports a clean import", () => {
@@ -41,5 +42,44 @@ describe("describeImport", () => {
       title: "Nothing was imported.",
       description: "3 duplicates skipped.",
     });
+  });
+});
+
+describe("editing helpers", () => {
+  const building: Building = {
+    id: "1",
+    user_id: "u",
+    created_at: "2026-10-21T00:00:00Z",
+    name: "Tower",
+    address: "1 Main St",
+    city: null,
+    country: "Greece",
+    floors: 12,
+    year_built: null,
+  };
+
+  it("turns a building into input text, using empty strings for missing values", () => {
+    expect(toDraft(building)).toEqual({
+      name: "Tower",
+      address: "1 Main St",
+      city: "",
+      country: "Greece",
+      floors: "12",
+      year_built: "",
+    });
+  });
+
+  it("detects when nothing changed, so no request is sent", () => {
+    const same = {
+      name: "Tower",
+      address: "1 Main St",
+      city: null,
+      country: "Greece",
+      floors: 12,
+      year_built: null,
+    };
+    expect(isUnchanged(building, same)).toBe(true);
+    expect(isUnchanged(building, { ...same, city: "Athens" })).toBe(false);
+    expect(isUnchanged(building, { ...same, floors: 13 })).toBe(false);
   });
 });

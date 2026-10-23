@@ -1,12 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { parsePatch } from "../../../supabase/functions/_shared/buildings.ts";
-import {
-  deleteBuilding,
-  deleteBuildings,
-  updateBuildings,
-  type Building,
-} from "@/lib/buildings-api";
+import { deleteBuilding, deleteBuildings, type Building } from "@/lib/buildings-api";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,26 +11,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-
-const FIELDS = [
-  { key: "name", label: "Name", type: "text" },
-  { key: "address", label: "Address", type: "text" },
-  { key: "city", label: "City", type: "text" },
-  { key: "country", label: "Country", type: "text" },
-  { key: "floors", label: "Floors", type: "number" },
-  { key: "year_built", label: "Year built", type: "number" },
-] as const;
 
 export function DeleteBuildingDialog({
   building,
@@ -85,85 +59,6 @@ export function DeleteBuildingDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  );
-}
-
-const BULK_FIELDS = FIELDS.filter((f) => f.key !== "name");
-
-export function BulkEditDialog({
-  ids,
-  onClose,
-  onSaved,
-}: {
-  ids: string[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    const parsed = parsePatch(values);
-    if ("error" in parsed) {
-      setError(parsed.error);
-      return;
-    }
-    setBusy(true);
-    try {
-      const count = await updateBuildings(ids, parsed.value);
-      toast.success(`Updated ${count} building${count === 1 ? "" : "s"}.`);
-      onSaved();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <form onSubmit={submit} className="space-y-4">
-          <DialogHeader>
-            <DialogTitle>
-              Edit {ids.length} building{ids.length === 1 ? "" : "s"}
-            </DialogTitle>
-            <DialogDescription>
-              Fill in only the fields you want to change. Empty fields keep each building's current
-              value.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            {BULK_FIELDS.map((f) => (
-              <div key={f.key} className="space-y-1">
-                <Label htmlFor={`bulk-${f.key}`}>{f.label}</Label>
-                <Input
-                  id={`bulk-${f.key}`}
-                  type={f.type}
-                  value={values[f.key] ?? ""}
-                  onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
-                />
-              </div>
-            ))}
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={busy}>
-              {busy ? "Saving…" : "Apply to selected"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }
 

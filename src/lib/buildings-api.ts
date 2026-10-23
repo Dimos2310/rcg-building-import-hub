@@ -1,10 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
-import type {
-  BuildingFields,
-  BuildingPatch,
-  ImportResult,
-} from "../../supabase/functions/_shared/buildings.ts";
+import type { BuildingFields, ImportResult } from "../../supabase/functions/_shared/buildings.ts";
 
 export type Building = Database["public"]["Tables"]["buildings"]["Row"];
 
@@ -29,12 +25,6 @@ export async function deleteBuilding(id: string): Promise<void> {
   const { data, error } = await supabase.from("buildings").delete().eq("id", id).select("id");
   if (error) throw new Error(error.message);
   if (data.length === 0) throw new Error("Building not found.");
-}
-
-export async function updateBuildings(ids: string[], patch: BuildingPatch): Promise<number> {
-  const { data, error } = await supabase.from("buildings").update(patch).in("id", ids).select("id");
-  if (error) throw new Error(error.message);
-  return data.length;
 }
 
 export async function deleteBuildings(ids: string[]): Promise<number> {
